@@ -30,22 +30,22 @@ Prometheus可以在运行时重新加载其配置。 如果新配置格式不正
 全局配置指定在所有其他配置上下文中有效的参数。 它们还可用作其他配置节的默认值。
 ```
 global:
-  # 默认情况下抓取目标的频率.
+  # 抓取目标实例的频率时间值，默认1分钟
   [ scrape_interval: <duration> | default = 1m ]
 
-  # 抓取超时时间.
+  # 一次抓取请求超时时间值，默认10s
   [ scrape_timeout: <duration> | default = 10s ]
 
-  # 评估规则的频率.
+  #  执行配置文件规则的频率时间值, 默认1m
   [ evaluation_interval: <duration> | default = 1m ]
 
-  # 与外部系统通信时添加到任何时间序列或警报的标签
+  # 当和外部系统通信时(federation, remote storage, Alertmanager), 这些标签会增加到度量指标数据中
   #（联合，远程存储，Alertma# nager）.
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
 # 规则文件指定了一个globs列表. 
-# 从所有匹配的文件中读取规则和警报.
+# 规则文件指定规则文件路径列表。规则和警报是从所有匹配的文件中读取的
 rule_files:
   [ - <filepath_glob> ... ]
 
@@ -86,7 +86,7 @@ job_name: <job_name>
 # 抓取此job时，每次抓取超时时间.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
-# 从目标获取指标的HTTP资源路径.
+# 从目标列表中抓取度量指标的http资源路径, 默认为/metrics
 [ metrics_path: <path> | default = /metrics ]
 
 # honor_labels控制Prometheus如何处理已经存在于已抓取数据中的标签与Prometheus将附加服务器端的标签之间的冲突（"job"和"instance"标签，手动配置的目标标签以及服务发现实现生成的标签）。
@@ -99,7 +99,7 @@ job_name: <job_name>
 # 
 [ honor_labels: <boolean> | default = false ]
 
-# 配置用于请求的协议方案.
+# 配置用于请求的协议方案, 默认为http请求
 [ scheme: <scheme> | default = http ]
 
 # 可选的HTTP URL参数.
@@ -192,6 +192,7 @@ metric_relabel_configs:
 
 ###### 1.2 `<tls_config>`
 `tls_config`允许配置TLS连接。
+
 ```
 # 用于验证API服务器证书的CA证书。
 [ ca_file: <filename> ]
@@ -208,7 +209,80 @@ metric_relabel_configs:
 [ insecure_skip_verify: <boolean> ]
 ```
 
-###### 1.3 `<dns_sd_config>`
+###### 1.3 <azure_sd_config>
+
+**Azure SD正处于测试阶段：在未来的版本中，仍然可能对配置进行实质性修改**
+
+Azure SD配置允许从Azure虚拟机中检索和获取目标。
+
+下面的测试标签在relabeling期间在目标上仍然是可用的：
+
+- `__meta_azure_machine_id`: 机器ID
+- `__meta_azure_machine_location`: 机器运行的位置
+- `__meta_azure_machine_name`: 机器名称
+- `__meta_azure_machine_private_ip`: 机器的内网IP
+- `__meta_azure_machine_resource_group`: 机器的资源组
+- `__meta_azure_tag_<tagname>`: 机器的每个tag值
+
+对于Azure发现，看看下面的配置选项：
+
+```
+# The information to access the Azure API.
+# The subscription ID.
+subscription_id: <string>
+# The tenant ID.
+tenant_id: <string>
+# The client ID.
+client_id: <string>
+# The client secret.
+client_secret: <string>
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 300s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+
+```
+
+###### 1.4 <consul_sd_config>
+
+Consul服务发现配置允许从Consul's Catalog API中检索和获取目标。
+
+下面的meta标签在relabeling期间在目标上仍然是可用的：
+
+- `__meta_consul_address`: 目标地址
+- `__meta_consul_dc`: 目标的数据中心名称
+- `__meta_consul_node`: 目标的节点名称
+- `__meta_consul_service_address`: 目标的服务地址
+- `__meta_consul_service_id`: 目标的服务ID
+- `__meta_consul_service_port`: 目标的服务端口
+- `__meta_consul_service`: 这个目标属于哪个服务名称
+- `__meta_consul_tags`: 由标签分隔符链接的目标的标签列表
+
+```
+# 下面配置是访问Consul API所需要的信息
+server: <host>
+[ token: <string> ]
+[ datacenter: <string> ]
+[ scheme: <string> ]
+[ username: <string> ]
+[ password: <string> ]
+
+# 指定对于某个目标的服务列表被检测， 如果省略，所有服务被抓取
+services:
+  [ - <string> ]
+
+# The string by which Consul tags are joined into the tag label.
+[ tag_separator: <string> | default = , ]
+
+```
+
+注意：用于获取目标的IP和PORT，被组装到`<__meta_consul_address>:<__meta_consul_service_port>`。然而，在一些Consul创建过程中，这个相关地址在`__meta_consul_service_address`。在这些例子中，你能使用[relabel](https://prometheus.io/docs/operating/configuration/#relabel_config)特性去替换指定的`__address__`标签。
+
+###### 1.5 `<dns_sd_config>`
+
 基于DNS的服务发现配置允许指定一组DNS域名，这些域名会定期查询以发现目标列表。 要联系的DNS服务器从`/etc/resolv.conf`中读取。
 
 此服务发现方法仅支持基本的DNS A，AAAA和SRV记录查询，但不支持RFC6763中指定的高级DNS-SD方法。
@@ -230,14 +304,148 @@ names:
 ```
 其中`<domain_name>`是有效的DNS域名。 其中`<query_type>`是SRV，A或AAAA。
 
-###### 1.4 `<kubernetes_sd_config>`
+###### 1.6 <ec2_sd_config>
+
+EC2 SD配置允许从AWS EC2实例中检索目标。默认情况下用内网IP地址, 但是在relabeling期间可以改变成公网ID地址。
+
+下面meta标签在relabeling期间在目标上是可用的：
+
+- `__meta_ec2_availability_zone`: 正在运行的实例的可用域。
+- `__meta_ec2_instance_id`: EC2的实例ID
+- `__meta_ec2_instance_state`: EC2的实例状态
+- `__meta_ec2_instance_type`: EC2的实例类型
+- `__meta_ec2_private_ip`: 如果存在，表示内网IP的地址
+- `__meta_ec2_public_dns_name`: 如果可用，表示实例的公网DNS名称
+- `__meta_ec2_public_ip`: 如果可用，表示实例的公网IP地址
+- `__meta_ec2_subnet_id`: 如果可用，表示子网IDs的列表。
+- `__meta_ec2_tag_<tagkey>`: 这个实例的tag值
+- `__meta_ec2_vpc_id`: 如果可用，表示正在运行的实例的VPC的ID
+
+对于EC2 discovery，看看下面的配置选项：
+
+```
+# 访问EC2 API的信息
+
+# AWS域
+region: <string>
+
+# AWS API keys. 如果空白，环境变量`AWS_ACCESS_KEY_ID`和`AWS_SECRET_ACCESS_KEY`可以被使用
+[ access_key: <string> ]
+[ secret_key: <string> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+```
+
+###### 1.7 <file_sd_config>
+
+基于文件的服务发现提供了一些通用方法去配置静态目标，以及作为插件自定义服务发现机制的接口。
+
+它读取包含零个或者多个`<static_config>s`的一些文件。通过磁盘监视器检测对所有定义文件的更改，并立即应用。文件可能以YAML或JSON格式提供。只应用于形成良好目标群体的变化。
+
+这个JSON文件必须包含静态配置的列表，使用这个格式：
+
+```
+[
+  {
+    "targets": [ "<host>", ... ],
+    "labels": {
+      "<labelname>": "<labelvalue>", ...
+    }
+  },
+  ...
+]
+```
+
+文件内容也可以通过周期性刷新时间重新加载。
+
+在标签重构阶段，每个目标有一个meta标签`__meta_filepath`。它的值被设置成从目标中提取的文件路径。
+
+```
+# Patterns for files from which target groups are extracted.
+files:
+  [ - <filename_pattern> ... ]
+
+# Refresh interval to re-read the files.
+[ refresh_interval: <duration> | default = 5m ]
+```
+
+`filename_pattern`可以是以`.json, .yml, .yaml`结尾。最后路径段可以包含单个`*`，它匹配任何字符顺序，例如: `my/path/tg_*.json`。
+
+在`v0.20`, `names`: 用`files:`代替。
+
+###### 1.8 <gce_sd_config>
+
+**GCE SD在测试中：在将来版本中，配置可能会有实质性变化。**
+
+从GCP GCE实例中，GCE SD配置允许检索和获取目标。这个内网IP地址被默认使用，但是在relabeling期间，这个公网IP地址可能会发生变化。
+
+在relabeling期间，下面的meta标签在目标上是可用的：
+
+- `__meta_gce_instance_name`: 实例名称
+- `__meta_gce_metadata_<name>`: 实例每一个metadata项
+- `__meta_gce_network`: 实例的网络
+- `__meta_gce_private_ip`: 实例的内网IP
+- `__meta_gce_project`: 正在运行的GCP项目
+- `__meta_gce_public_ip`: 如果存在，表示GCP的公网IP地址
+- `__meta_gce_subnetwork`: 实例的子网
+- `__meta_gce_tags`: 实例的tag列表
+- `__meta_gce_zone`: 正在运行的实例的GCE区域
+
+对于GCE discovery，看看下面的配置选项：
+
+```
+# The information to access the GCE API.
+
+# The GCP Project
+project: <string>
+
+# The zone of the scrape targets. If you need multiple zones use multiple
+# gce_sd_configs.
+zone: <string>
+
+# Filter can be used optionally to filter the instance list by other criteria
+[ filter: <string> ]
+
+# Refresh interval to re-read the instance list
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+
+# The tag separator is used to separate the tags on concatenation
+[ tag_separator: <string> | default = , ]
+```
+
+Google Cloud SDK默认客户端通过查找一下位置发现凭据，优先选择找到的第一个位置：
+
+1. 由GOOGLE_APPLICATION_CREENTIALS环境变量指定的JSON文件
+2. 一个JSON文件在大家都熟悉的路径下：$HOME/.config/gclooud/application_default_credentials.json
+3. 从GCE元数据服务器获取
+
+如果Prometheus运行在GCE上，关联这个正在运行的实例的服务账号，应该至少可以从计算资源上有读取数据的权限。如果运行在GCE外面，需要确保创建一个合适的服务账号，并把证书文件放置在指定的某个地方。
+
+
+
+
+
+###### 1.9 `<kubernetes_sd_config>`
+
 Kubernetes SD配置允许从[Kubernetes](https://kubernetes.io/)的RESTAPI中检索scrape目标，并始终与群集状态保持同步。
 
 可以配置以下`role`类型之一来发现目标：
 1. `node`
-`node`角色发现每个群集节点有一个目标，其地址默认为Kubelet的HTTP端口。 目标地址默认为`NodeInternalIP`，`NodeExternalIP`，`NodeLegacyHostIP`和`NodeHostName`的地址类型顺序中Kubernetes节点对象的第一个现有地址。
+  `node`角色发现每个群集节点有一个目标，其地址默认为Kubelet的HTTP端口。 目标地址默认为`NodeInternalIP`，`NodeExternalIP`，`NodeLegacyHostIP`和`NodeHostName`的地址类型顺序中Kubernetes节点对象的第一个现有地址。
 
-可用元标签：
+  可用元标签：
+
 - `__meta_kubernetes_node_name`：节点对象的名称。
 - `__meta_kubernetes_node_label_ <labelname>`：节点对象中的每个标签。
 ` `__meta_kubernetes_node_annotation_<annotationname>`：节点对象中的每个注释。
@@ -246,9 +454,9 @@ Kubernetes SD配置允许从[Kubernetes](https://kubernetes.io/)的RESTAPI中检
 此外，节点的`instance`标签将设置为从API服务器检索的节点名称。
 
 2. `service`
-`service`角色为每个服务发现每个服务端口的目标。 这对于服务的黑盒监控通常很有用。 该地址将设置为服务的Kubernetes DNS名称和相应的服务端口。
+  `service`角色为每个服务发现每个服务端口的目标。 这对于服务的黑盒监控通常很有用。 该地址将设置为服务的Kubernetes DNS名称和相应的服务端口。
 
-可用元标签：
+  可用元标签：
 
 - `__meta_kubernetes_namespace`：服务对象的命名空间。
 - `__meta_kubernetes_service_annotation_<annotationname>`：服务对象的注释。
@@ -261,9 +469,9 @@ Kubernetes SD配置允许从[Kubernetes](https://kubernetes.io/)的RESTAPI中检
 - `__meta_kubernetes_service_port_protocol`：目标服务端口的协议。
 
 3. `pod`
-`pod`角色发现所有`pod`并将其容器暴露为目标。 对于容器的每个声明端口，将生成单个目标。 如果容器没有指定端口，则会创建每个容器的无端口目标，以通过重新标记手动添加端口。
+  `pod`角色发现所有`pod`并将其容器暴露为目标。 对于容器的每个声明端口，将生成单个目标。 如果容器没有指定端口，则会创建每个容器的无端口目标，以通过重新标记手动添加端口。
 
-可用元标签：
+  可用元标签：
 
 - `__meta_kubernetes_namespace`：`pod`对象的命名空间。
 - `__meta_kubernetes_pod_name`：`pod`对象的名称。
@@ -283,9 +491,9 @@ Kubernetes SD配置允许从[Kubernetes](https://kubernetes.io/)的RESTAPI中检
 - `__meta_kubernetes_pod_controller_name`：`pod`控制器的名称。
 
 4. `endpoints`
-`endpoints`角色从列出的服务端点发现目标。 对于每个端点地址，每个端口发现一个目标。 如果端点由`pod`支持，则`pod`的所有其他容器端口（未绑定到端点端口）也会被发现为目标。
+  `endpoints`角色从列出的服务端点发现目标。 对于每个端点地址，每个端口发现一个目标。 如果端点由`pod`支持，则`pod`的所有其他容器端口（未绑定到端点端口）也会被发现为目标。
 
-可用元标签：
+  可用元标签：
 
 - `__meta_kubernetes_namespace`：端点对象的命名空间。
 - `__meta_kubernetes_endpoints_name`：端点对象的名称。对于直接从端点列表中发现的所有目标（不是从底层`pod`中另外推断的那些），附加以下标签：
@@ -298,9 +506,9 @@ Kubernetes SD配置允许从[Kubernetes](https://kubernetes.io/)的RESTAPI中检
 对于由`pod`支持的所有目标，将附加角色的所有标签：`pod`发现。
 
 5. `ingress`
-`ingress`角色发现每个入口的每个路径的目标。 这通常用于黑盒监控入口。 地址将设置为入口规范中指定的主机。
+  `ingress`角色发现每个入口的每个路径的目标。 这通常用于黑盒监控入口。 地址将设置为入口规范中指定的主机。
 
-可用元标签：
+  可用元标签：
 
 - `__meta_kubernetes_namespace`：入口对象的名称空间。
 - `__meta_kubernetes_ingress_name`：入口对象的名称。
@@ -351,7 +559,123 @@ namespaces:
 
 您可能希望查看第三方Prometheus[操作](https://github.com/coreos/prometheus-operator)，它可以在Kubernetes上自动执行Prometheus设置。
 
-###### 1.5 `<static_config>`
+###### 1.10 <marathon_sd_config>
+
+**Marathon SD正在测试中：在将来的版本中配置可能会有实质性的变化**
+
+Marathon SD配置使用[Marathon](https://mesosphere.github.io/marathon/)REST API允许检索和获取目标。Prometheus将会定期地检查当前运行的任务REST端点，以及对每个app创建一个目标组，这个app至少有一个健康的任务。
+
+在relabeling期间，下面的meta标签在目标机上是可用的：
+
+- `__meta_marathon_app`: app的名称
+- `__meta_marathon_image`: 正在使用的Docker镜像名称
+- `__meta_marathon_task`: Mesos任务ID
+- `__meta_marathon_app_label_<labelname>`: 附加在app上的Marathon标签
+
+对于Marathon发现，详见下面的配置选项：
+
+```
+# List of URLs to be used to contact Marathon servers.
+# You need to provide at least one server URL, but should provide URLs for
+# all masters you have running.
+servers:
+  - <string>
+
+# Polling interval
+[ refresh_interval: <duration> | default = 30s ]
+```
+
+默认情况下，在Markdown的每个列出的app会被Prometheus抓取。如果不是所有提供Prometheus度量指标，你能使用一个Marathon标签和Prometheus relabeling去控制实际过程中被获取的实例。默认情况下所有的app也会以Prometheus系统中的一个任务的形式显示出来，这可以通过使用relabeling改变这些。
+
+###### 1.11 <nerve_sd_config>
+
+从存储在Zookeeper中的AirBnB's Nerve上，Nerve SD配置允许检索和获取目标。
+
+在relabeling期间，下面的meta标签在目标上是可用的：
+
+- `__meta_nerve_path`: 在Zookeeper集群中的端节点全路径
+- `__meta_nerve_endpoint_host`: 端点的IP
+- `__meta_nerve_endpoint_port`: 端点的端口
+- `__meta_nerve_endpoint_name`: 端点的名称
+
+```
+# The Zookeeper servers.
+servers:
+  - <host>
+# Paths can point to a single service, or the root of a tree of services.
+paths:
+  - <string>
+[ timeout: <duration> | default = 10s ]
+```
+
+###### 1.12 <serverset_sd_config>
+
+Serverset SD配置允许检索和获取从存储在Zookeeper中的Serversetsd的目标。Servesets由[Finagle](https://twitter.github.io/finagle/)和[Aurora](http://aurora.apache.org/)经常使用。
+
+在relabeling期间，下面的meta标签在目标上是可用的：
+
+- `__meta_serverset_path`: 在zookeeper里的serverset成员的全路径
+- `__meta_serverset_endpoint_host`: 默认端点的host
+- `__meta_serverset_endpoint_port`: 默认端点的端口
+- `__meta_serverset_endpoint_host_<endpoint>`: 给定端点的host
+- `__meta_serverset_endpoint_port_<endpoint>`: 给定端点的port
+- `__meta_serverset_shard`: 成员的分片数
+- `__meta_serverset_status`: 成员的状态
+
+```
+# The Zookeeper servers.
+servers:
+  - <host>
+# Paths can point to a single serverset, or the root of a tree of serversets.
+paths:
+  - <string>
+[ timeout: <duration> | default = 10s ]
+```
+
+Serverset数据必须是JSON格式，Thrift格式当前不被支持
+
+###### 1.13 <triton_sd_config>
+
+** Triton SD正在测试中：在将来的版本中配置可能会有实质性的变化**
+
+[Triton](https://github.com/joyent/triton) SD配置允许从容器监控发现端点的目标中检索和获取。
+
+在relabeling期间，下面的meta标签在目标上是可用的：
+
+- `__meta_triton_machine_id`: 目标容器的UUID
+- `__meta_triton_machine_alias`: 目标容器的别名
+- `__meta_triton_machine_image`: 目标容器的镜像类型
+- `__meta_triton_machine_server_id`: 目标容器的服务UUID
+
+```
+# The information to access the Triton discovery API.
+
+# The account to use for discovering new target containers.
+account: <string>
+
+# The DNS suffix which should be applied to target containers.
+dns_suffix: <string>
+
+# The Triton discovery endpoint (e.g. 'cmon.us-east-3b.triton.zone'). This is
+# often the same value as dns_suffix.
+endpoint: <string>
+
+# The port to use for discovery and metric scraping.
+[ port: <int> | default = 9163 ]
+
+# The interval which should should be used for refreshing target containers.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The Triton discovery API version.
+[ version: <int> | default = 1 ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
+
+###### 1.14 `<static_config>`
+
 static_config允许指定目标列表和它们的公共标签集。 这是在scrape配置中指定静态目标的规范方法。
 ```
 # 静态配置指定的目标。
@@ -362,7 +686,7 @@ targets:
 labels:
   [ <labelname>: <labelvalue> ... ]
 ```
-###### 1.6 `<relabel_config>`
+###### 1.15 `<relabel_config>`
 重新标记是一种强大的工具，可以在抓取目标之前动态重写目标的标签集。 每个抓取配置可以配置多个重新标记步骤。 它们按照它们在配置文件中的出现顺序应用于每个目标的标签集。
 
 最初，除了配置的每目标标签之外，目标的作业标签设置为相应的scrape配置的`job_name`值。 `__address__`标签设置为目标的`<host>：<port>`地址。 重新标记后，如果在重新标记期间未设置实例标签，则实例标签默认设置为`__address__`的值。 `__scheme__`和`__metrics_path__`标签分别设置为目标的方案和度量标准路径。 `__param_ <name>`标签设置为名为`<name>`的第一个传递的URL参数的值。
@@ -408,17 +732,17 @@ labels:
 
 必须小心使用`labeldrop`和`labelkeep`，以确保在删除标签后仍然对指标进行唯一标记。
 
-###### 1.7 `<metric_relabel_configs>`
+###### 1.16 `<metric_relabel_configs>`
 度量重新标记应用于样本，作为摄取前的最后一步。 它具有与目标重新标记相同的配置格式和操作。 度量标准重新标记不适用于自动生成的时间序列，例如`up`。
 
 一个用途是将黑名单时间序列列入黑名单，这些时间序列太昂贵而无法摄取。
 
-###### 1.8 `<alert_relabel_configs>`
+###### 1.17 `<alert_relabel_configs>`
 警报重新标记在发送到Alertmanager之前应用于警报。 它具有与目标重新标记相同的配置格式和操作。 外部标签后应用警报重新标记。
 
 这样做的一个用途是确保具有不同外部标签的HA对Prometheus服务器发送相同的警报。
 
-###### 1.9 `<alertmanager_config>`
+###### 1.18 `<alertmanager_config>`
 `alertmanager_config`部分指定Prometheus服务器向其发送警报的Alertmanager实例。 它还提供参数以配置如何与这些Alertmanagers进行通信。
 
 Alertmanagers可以通过`static_configs`参数静态配置，也可以使用其中一种支持的服务发现机制动态发现。
@@ -507,7 +831,7 @@ relabel_configs:
   [ - <relabel_config> ... ]
 ```
 
-###### 1.10 `<remote_write>`
+###### 1.19 `<remote_write>`
 `write_relabel_configs`是在将样本发送到远程端点之前应用于样本的重新标记。 在外部标签之后应用写入重新标记。 这可用于限制发送的样本。
 
 有一个如何使用此功能的小型[演示](https://github.com/prometheus/prometheus/tree/release-2.8/documentation/examples/remote_storage)。
@@ -561,7 +885,7 @@ queue_config:
   [ max_backoff: <duration> | default = 100ms ]
 ```
 有一个与此功能[集成](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)的列表。
-###### 1.11 `<remote_read`
+###### 1.20 `<remote_read`
 ```
 # 要发送样本的端点的URL.
 url: <string>
